@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, writers
+from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits import mplot3d
 import math
 import cv2
@@ -18,8 +19,8 @@ def originShift(point,P):
 ##### Global Parameters #####
 dbMan = DB2D3DManager("C:/Users/Zemin XU/PycharmProjects/3d_reconstruction/data")
 baseDir = "data/"
-subject = "Khoa"
-action ="burpees_1_0"
+subject = "Lea"
+action ="squat_1_0"
 
 ##### Task 1: read the 2dTXT file and draw keypoints on original videos #####
 txt2dDir = baseDir + "OP2DTXT/" + subject
@@ -52,7 +53,7 @@ pose3Dv0 = dbMan.load3DTXT(subject,action) #Load the 3D pose after triangulation
 
 P01 = dbMan.loadExtrinsic(0) #origin shift matrix from 0 to 1
 P12 = dbMan.loadExtrinsic(1) #origin shift matrix from 1 to 2
-lst_f,lst_c  = dbMan.loadIntrinsic() #Loading intrinsic parameter of all cameras
+lst_f, lst_c = dbMan.loadIntrinsic() #Loading intrinsic parameter of all cameras
 
 pose2Dv2 = dbMan.load2DTXT(subject,action,2) #Load the 2D pose on view 2
 pose3Dv0 = dbMan.load3DTXT(subject,action) #Load the 3D pose after triangulation, reference at view 0
@@ -79,8 +80,71 @@ for i in range(nF):
         pos3Dv2 = pos3Dv2[:2] / pos3Dv2[2]  # Normalize 3D coordinate
         pos2Dx = lst_f[2] * pos3Dv2 + lst_c[2]  # Project into 2D point on view2, using the intrinsic of cam 2
 
-        cv2.circle(frame, (x, y), 4, (255, 255, 255))
+        cv2.circle(frame, (x, y), 8, (255, 255, 255))
         cv2.circle(frame,tuple(pos2Dx.astype('int')),4,(0,0,255),-1)
 
     vidWriter.write(frame)
+
+### Task 3: Triangulation the 3D keypoint by your own methods ###
+### from multi-view of keypoints on each frame ###
+
+xs=[]
+ys=[]
+zs=[]
+# find fundermental matrix
+for i in range(nF):
+    # frame by frame operation
+    ret, frame = cap.read()
+    points_v0 = []
+    points_v1 = []
+    for j in range(numJoint):
+        pos3Dv0 = pose3Dv0[i, 4 * j + 1:4 * j + 4]  # Retrieve the 3D point at view 0
+        pos3Dv1 = originShift(pos3Dv0, P01)  # Shifting origin from view 0 to view 1 of 3D point
+        pos3Dv0 = pos3Dv0[:2] / pos3Dv0[2]  # Normalize 3D coordinate
+        pos3Dv1 = pos3Dv1[:2] / pos3Dv1[2]  # Normalize 3D coordinate
+        points_v0.append(pos3Dv0)
+        points_v1.append(pos3Dv1)
+
+    # fundemental matrix
+    F, mask = cv2.findFundamentalMat(np.array(points_v0), np.array(points_v1), cv2.FM_LMEDS)
+    # camera matrix
+    cm0 = np.array([[lst_f[0][0], 0, lst_c[0][0]], [0, lst_f[0][1], lst_c[0][1]], [0,0,1]])
+    cm1 = np.array([[lst_f[1][0], 0, lst_c[1][0]], [0, lst_f[1][1], lst_c[1][1]], [0,0,1]])
+    # essential matrix
+    E = np.matmul(cm0.T, np.matmul(F, cm1))
+    # projection matrix
+    pm0 = np.dot(cm0, P01)
+    pm1 = np.dot(cm1, P01)
+    # triangulation
+    points_frame = cv2.triangulatePoints(pm0, pm1, np.array(points_v0).T, np.array(points_v1).T)
+    xs_frame = points_frame[0]
+    ys_frame = points_frame[1]
+    zs_frame = points_frame[2]
+    xs.append(xs_frame)
+    ys.append(ys_frame)
+    zs.append(zs_frame)
+
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+
+ax.set_zlim3d(-4, 4)                    # viewrange for z-axis should be [-4,4]
+ax.set_ylim3d(-4, 4)                    # viewrange for y-axis should be [-2,2]
+ax.set_xlim3d(-4, 4)
+# For each set of style and range settings, plot n random points in the box
+# defined by x in [23, 32], y in [0, 100], z in [zlow, zhigh].
+
+#for i in range(len(xs)):
+x = xs[0]
+y = ys[0]
+z = zs[0]
+ax.scatter(x, y, z)
+
+ax.set_xlabel('X Label')
+ax.set_ylabel('Y Label')
+ax.set_zlabel('Z Label')
+
+# plt.show()
+
+#anim = FuncAnimation(fig, update, N, fargs=(points, line, i), interval=10000/N, blit=False)
+#anim.save("matplot.mp4", dpi=150, writer='ffmpeg')
 
